@@ -158,7 +158,6 @@ class VSSP:
         while (commonHeaderSize - len(commonHeader) > 0):
             #commonHeader += self.client.recv(commonHeaderSize - len(commonHeader))
             currentReceiveData = self.client.recv(commonHeaderSize - len(commonHeader))
-            print(len(currentReceiveData))
             commonHeader += currentReceiveData
         #print(commonHeader)
         (mark, type, status, headerByteSize, commandByteSize, receiveTimestamp, sendTimestamp) = struct.unpack("<4s4s4sHHLL", commonHeader)
@@ -168,20 +167,19 @@ class VSSP:
         while ((recvSize - len(receiveData)) > 0):
             #receiveData += self.client.recv(recvSize - len(receiveData))
             currentReceiveData = self.client.recv(recvSize - len(receiveData))
-            print(len(currentReceiveData))
             receiveData += currentReceiveData
-        return (status.strip(), receiveData)
+        return (status.strip(), type, receiveData)
 
     def VSSPSET(self, param, value):
         sendData = "SET:{0}={1}\n".format(param, value)
         self.client.send(sendData.encode())
-        (status, receiveData) = self.recvVSSPPacket()
+        (status, type, receiveData) = self.recvVSSPPacket()
         return (status == b'000')
 
     def VSSPGET(self, param):
         sendData = "GET:{0}\n".format(param)
         self.client.send(sendData.encode())
-        (status, receiveData) = self.recvVSSPPacket()
+        (status, type, receiveData) = self.recvVSSPPacket()
         if (status == b'000'):
             # statusが正常であれば取得したパラメータを返す
             return receiveData.decode().split()[1]
@@ -282,7 +280,7 @@ class VSSP:
 
     # 距離データの取得を行う
     def ReceiveMeasurementData(self):
-        (status, receiveData) = self.recvVSSPPacket()
+        (status, type, receiveData) = self.recvVSSPPacket()
         (measurementHeaderSize, measurementHeader) = self.ReadVSSPMeasurementHeader(receiveData)
         # 距離データ応答じゃ無い場合は無視する
         if measurementHeaderSize != 20 and measurementHeaderSize != 24:
@@ -308,10 +306,12 @@ class VSSP:
 
     def StopMeasurement(self):
         self.client.send(b"DAT:ro=0\n")
-        self.recvVSSPPacket()
+        type = ""
+        while (type != b"DAT:"):
+            (status, type, receiveData) = self.recvVSSPPacket()
 
     def ReceiveAuxiliaryData(self):
-        (status, receiveData) = self.recvVSSPPacket()
+        (status, type, receiveData) = self.recvVSSPPacket()
         (auxiliaryHeaderSize, auxiliaryHeader) = self.ReadVSSPAuxiliaryHeader(receiveData)
         if auxiliaryHeader != None:
             auxiliaryDatas = []
@@ -336,39 +336,29 @@ class VSSP:
         self.recvVSSPPacket()
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("usage : {0} horizontalInterlace <target IP address> <loop count>".format(sys.argv[0]))
-        exit(0)
-
     print("start")
     port = 10940
-    host = "192.168.0.10"
-    loopCount = 10
-    if len(sys.argv) >= 3:
-        host = sys.argv[2]
-    if len(sys.argv) >= 4:
-        loopCount = int(sys.argv[3])
+    IPAddress = "192.168.0.10"
+    loopCount = 100
+    # IPアドレスの指定がされていればそのIPアドレスに接続
+    if len(sys.argv) >= 2:
+        IPAddress = sys.argv[1]
 
-    print("connect to " + host)
+    print("connect to " + IPAddress)
     YHT = VSSP()
-    YHT.open(host, port)
-    count = 0
+    YHT.open(IPAddress, port)
 
-    horizontalInterlace = sys.argv[1]
-    verticalInterlace = 2
+    YHT.InitialSetting(horizontalInterlace = 4, verticalInterlace = 1)
 
-    YHT.InitialSetting(int(horizontalInterlace), int(verticalInterlace))
-
-    print("client.send")
     isEnableIntensity = True
     YHT.StartMeasurement(isEnableIntensity)
 
     for i in range(loopCount):
         tmp = YHT.ReceiveMeasurementData()
         if (tmp):
-            (measurementHeader, distances, intensities, x, y, z) = tmp
+            (measurementHeader, polarPoints, intensities) = tmp
+            print("frame={0}, hfield={1}, vfield={2}, line={3}, dist[0:10]={4}".format(measurementHeader.frame, measurementHeader.h_field, measurementHeader.v_field, measurementHeader.line, polarPoints.distances[0:10]))
 
     # stop
     YHT.StopMeasurement()
-
     YHT.close()

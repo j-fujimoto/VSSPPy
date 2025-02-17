@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -9,6 +10,11 @@ from VSSP import VSSP
 sensor = VSSP()
 IPAddress = "192.168.0.10"
 port = 10940
+
+# IPアドレスの指定がされていればそのIPアドレスに接続
+if len(sys.argv) >= 2:
+    IPAddress = sys.argv[1]
+print("connect to " + IPAddress)
 sensor.open(IPAddress, port)
 
 # 水平インターレース4, 垂直インターレース 1 に設定
